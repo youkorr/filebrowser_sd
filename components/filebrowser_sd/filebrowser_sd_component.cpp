@@ -1,4 +1,4 @@
-#include "filebrowser_sd.h"
+#include "filebrowser_sd_component.h"
 #include "esphome/core/log.h"
 #include <dirent.h>
 #include <sys/stat.h>
