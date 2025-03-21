@@ -25,7 +25,6 @@ bool FileBrowserSDComponent::login() {
   std::string login_url = this->base_url_ + "/api/login";
   esp_http_client_handle_t client = create_client(login_url.c_str());
   
-  // Prepare login data
   std::string login_data = "{\"username\":\"" + this->username_ + 
                           "\",\"password\":\"" + this->password_ + "\"}";
   
@@ -39,14 +38,19 @@ bool FileBrowserSDComponent::login() {
   if (err == ESP_OK) {
     int status_code = esp_http_client_get_status_code(client);
     if (status_code == 200) {
-      // Get auth token from response header
       char *token = nullptr;
       if (esp_http_client_get_header(client, "X-Auth-Token", &token) == ESP_OK && token != nullptr) {
         this->auth_token_ = std::string(token);
         success = true;
+        ESP_LOGI(TAG, "Successfully obtained auth token");
+      } else {
+        ESP_LOGE(TAG, "Failed to get auth token from response");
       }
     } else {
       ESP_LOGE(TAG, "Login failed with status code: %d", status_code);
+      if (status_code == 401) {
+        ESP_LOGE(TAG, "Invalid username or password");
+      }
     }
   } else {
     ESP_LOGE(TAG, "Login request failed: %s", esp_err_to_name(err));
@@ -54,6 +58,47 @@ bool FileBrowserSDComponent::login() {
   
   esp_http_client_cleanup(client);
   return success;
+}
+
+bool FileBrowserSDComponent::renew_token() {
+  if (this->auth_token_.empty()) {
+    return login();
+  }
+
+  ESP_LOGI(TAG, "Renewing authentication token...");
+  std::string renew_url = this->base_url_ + "/api/renew";
+  esp_http_client_handle_t client = create_client(renew_url.c_str());
+  
+  esp_http_client_set_method(client, HTTP_METHOD_POST);
+  
+  esp_err_t err = esp_http_client_perform(client);
+  bool success = false;
+  
+  if (err == ESP_OK) {
+    int status_code = esp_http_client_get_status_code(client);
+    if (status_code == 200) {
+      success = true;
+      ESP_LOGI(TAG, "Token renewed successfully");
+    } else {
+      ESP_LOGE(TAG, "Token renewal failed with status code: %d", status_code);
+      if (status_code == 401) {
+        this->auth_token_.clear();
+        success = login();
+      }
+    }
+  } else {
+    ESP_LOGE(TAG, "Token renewal request failed: %s", esp_err_to_name(err));
+  }
+  
+  esp_http_client_cleanup(client);
+  return success;
+}
+
+bool FileBrowserSDComponent::check_and_renew_auth() {
+  if (this->auth_token_.empty()) {
+    return login();
+  }
+  return true;
 }
 
 esp_http_client_handle_t FileBrowserSDComponent::create_client(const char* url) {
@@ -78,7 +123,7 @@ void FileBrowserSDComponent::set_auth_header(esp_http_client_handle_t client) {
 }
 
 bool FileBrowserSDComponent::list_files(const std::string &path) {
-  if (!is_authenticated() && !login()) {
+  if (!check_and_renew_auth()) {
     return false;
   }
   
@@ -94,7 +139,6 @@ bool FileBrowserSDComponent::list_files(const std::string &path) {
   if (err == ESP_OK) {
     int status_code = esp_http_client_get_status_code(client);
     if (status_code == 200) {
-      // Read response
       char buffer[1024] = {0};
       int read_len = esp_http_client_read(client, buffer, sizeof(buffer)-1);
       if (read_len > 0) {
@@ -114,7 +158,7 @@ bool FileBrowserSDComponent::list_files(const std::string &path) {
 }
 
 bool FileBrowserSDComponent::upload_file(const std::string &local_path, const std::string &remote_path) {
-  if (!is_authenticated() && !login()) {
+  if (!check_and_renew_auth()) {
     return false;
   }
   
@@ -167,7 +211,7 @@ bool FileBrowserSDComponent::upload_file(const std::string &local_path, const st
 }
 
 bool FileBrowserSDComponent::download_file(const std::string &remote_path, const std::string &local_path) {
-  if (!is_authenticated() && !login()) {
+  if (!check_and_renew_auth()) {
     return false;
   }
   
