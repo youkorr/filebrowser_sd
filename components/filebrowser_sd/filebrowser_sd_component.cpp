@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <WiFi.h>
 
 namespace esphome {
 namespace filebrowser_sd {
@@ -14,22 +15,66 @@ void FileBrowserSDComponent::setup() {
   ESP_LOGCONFIG(TAG, "FileBrowser SD Component initialized");
   ESP_LOGCONFIG(TAG, "  Base Path: %s", this->base_path_.c_str());
   ESP_LOGCONFIG(TAG, "  Mount Point: %s", this->mount_point_.c_str());
+  ESP_LOGCONFIG(TAG, "  Address IP: %s", this->address_ip_.c_str());
+  ESP_LOGCONFIG(TAG, "  Port: %d", this->port_);
+  ESP_LOGCONFIG(TAG, "  Root Path: %s", this->root_path_.c_str());
+  ESP_LOGCONFIG(TAG, "  Username: %s", this->username_.c_str());
+  ESP_LOGCONFIG(TAG, "  Password: [hidden]");
   ESP_LOGCONFIG(TAG, "  Max Files: %d", this->max_files_);
+  ESP_LOGCONFIG(TAG, "  Format If Mount Failed: %s", YESNO(this->format_if_mount_failed_));
+
+  // Démarrer le serveur web si l'adresse IP et le port sont configurés
+  if (!this->address_ip_.empty() && this->port_ != 0) {
+    this->start_web_server();
+  }
 }
 
 void FileBrowserSDComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "FileBrowser SD Component:");
   ESP_LOGCONFIG(TAG, "  Base Path: %s", this->base_path_.c_str());
   ESP_LOGCONFIG(TAG, "  Mount Point: %s", this->mount_point_.c_str());
+  ESP_LOGCONFIG(TAG, "  Address IP: %s", this->address_ip_.c_str());
+  ESP_LOGCONFIG(TAG, "  Port: %d", this->port_);
+  ESP_LOGCONFIG(TAG, "  Root Path: %s", this->root_path_.c_str());
+  ESP_LOGCONFIG(TAG, "  Username: %s", this->username_.c_str());
+  ESP_LOGCONFIG(TAG, "  Password: [hidden]");
   ESP_LOGCONFIG(TAG, "  Max Files: %d", this->max_files_);
   ESP_LOGCONFIG(TAG, "  Format If Mount Failed: %s", YESNO(this->format_if_mount_failed_));
+}
+
+bool FileBrowserSDComponent::authenticate(const std::string &username, const std::string &password) {
+  if (this->username_.empty() && this->password_.empty()) {
+    // Pas d'authentification requise
+    return true;
+  }
+  return (username == this->username_ && password == this->password_);
+}
+
+void FileBrowserSDComponent::start_web_server() {
+  if (this->address_ip_.empty() || this->port_ == 0) {
+    ESP_LOGE(TAG, "Address IP or port not configured");
+    return;
+  }
+
+  // Connexion au WiFi
+  WiFi.begin("your-ssid", "your-password"); // Remplacez par vos identifiants WiFi
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    ESP_LOGI(TAG, "Connecting to WiFi...");
+  }
+
+  ESP_LOGI(TAG, "Web server started at http://%s:%d", this->address_ip_.c_str(), this->port_);
+
+  // Démarrer le serveur web
+  // (Vous devrez implémenter cette partie en fonction de votre besoin)
+  // Exemple : utiliser un serveur HTTP ou FTP
 }
 
 bool FileBrowserSDComponent::list_dir(const std::string &path) {
   DIR *dir = nullptr;
   struct dirent *entry = nullptr;
   struct stat stat_buf;
-  std::string full_path = this->mount_point_ + path;
+  std::string full_path = this->mount_point_ + this->root_path_ + path;
   
   ESP_LOGI(TAG, "Listing directory: %s", full_path.c_str());
   
@@ -58,7 +103,7 @@ bool FileBrowserSDComponent::list_dir(const std::string &path) {
 }
 
 bool FileBrowserSDComponent::create_dir(const std::string &path) {
-  std::string full_path = this->mount_point_ + path;
+  std::string full_path = this->mount_point_ + this->root_path_ + path;
   
   ESP_LOGI(TAG, "Creating directory: %s", full_path.c_str());
   
@@ -71,7 +116,7 @@ bool FileBrowserSDComponent::create_dir(const std::string &path) {
 }
 
 bool FileBrowserSDComponent::delete_file(const std::string &path) {
-  std::string full_path = this->mount_point_ + path;
+  std::string full_path = this->mount_point_ + this->root_path_ + path;
   
   ESP_LOGI(TAG, "Deleting file: %s", full_path.c_str());
   
@@ -84,8 +129,8 @@ bool FileBrowserSDComponent::delete_file(const std::string &path) {
 }
 
 bool FileBrowserSDComponent::rename_file(const std::string &old_path, const std::string &new_path) {
-  std::string full_old_path = this->mount_point_ + old_path;
-  std::string full_new_path = this->mount_point_ + new_path;
+  std::string full_old_path = this->mount_point_ + this->root_path_ + old_path;
+  std::string full_new_path = this->mount_point_ + this->root_path_ + new_path;
   
   ESP_LOGI(TAG, "Renaming file: %s -> %s", full_old_path.c_str(), full_new_path.c_str());
   
@@ -98,7 +143,7 @@ bool FileBrowserSDComponent::rename_file(const std::string &old_path, const std:
 }
 
 bool FileBrowserSDComponent::get_file_info(const std::string &path) {
-  std::string full_path = this->mount_point_ + path;
+  std::string full_path = this->mount_point_ + this->root_path_ + path;
   struct stat stat_buf;
   
   ESP_LOGI(TAG, "Getting file info: %s", full_path.c_str());
