@@ -14,25 +14,26 @@ class FileBrowserSDComponent : public Component {
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::LATE; }
   
-  void set_webdav_url(const std::string &url) { this->webdav_url_ = url; }
+  void set_base_url(const std::string &url) { this->base_url_ = url; }
   void set_username(const std::string &username) { this->username_ = username; }
   void set_password(const std::string &password) { this->password_ = password; }
   void set_mount_point(const std::string &mount_point) { this->mount_point_ = mount_point; }
   
-  void sync_to_filebrowser();
-  void sync_from_filebrowser();
+  bool login();
+  bool list_files(const std::string &path = "/");
+  bool upload_file(const std::string &local_path, const std::string &remote_path);
+  bool download_file(const std::string &remote_path, const std::string &local_path);
   
  protected:
-  std::string webdav_url_;
+  std::string base_url_;
   std::string username_;
   std::string password_;
   std::string mount_point_;
-  esp_http_client_handle_t client_{nullptr};
+  std::string auth_token_;
 
-  void upload_file(const std::string &local_path, const std::string &remote_path);
-  void download_file(const std::string &remote_path, const std::string &local_path);
-  void list_remote_files();
   esp_http_client_handle_t create_client(const char* url);
+  bool is_authenticated();
+  void set_auth_header(esp_http_client_handle_t client);
 };
 
 }  // namespace filebrowser_sd
