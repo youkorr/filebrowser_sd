@@ -11,8 +11,16 @@ static const char *const TAG = "filebrowser_sd";
 
 void FileBrowserSDComponent::setup() {
   ESP_LOGCONFIG(TAG, "Setting up FileBrowser SD Client...");
+  
   if (login()) {
     ESP_LOGI(TAG, "Successfully logged in to Filebrowser");
+    
+    if (!this->smb_shares_.empty()) {
+      if (!mount_smb_shares()) {
+        ESP_LOGE(TAG, "Failed to mount SMB shares");
+      }
+    }
+    
     list_files();
   } else {
     ESP_LOGE(TAG, "Failed to login to Filebrowser");
@@ -252,6 +260,68 @@ bool FileBrowserSDComponent::download_file(const std::string &remote_path, const
   return success;
 }
 
+bool FileBrowserSDComponent::mount_smb_shares() {
+  ESP_LOGI(TAG, "Mounting SMB shares...");
+  for (const auto &share : this->smb_shares_) {
+    if (!list_smb_files(share)) {
+      ESP_LOGE(TAG, "Failed to access SMB share: %s", share.c_str());
+      return false;
+    }
+  }
+  return true;
+}
+
+bool FileBrowserSDComponent::list_smb_files(const std::string &share, const std::string &path) {
+  ESP_LOGI(TAG, "Listing files on SMB share: %s, path: %s", share.c_str(), path.c_str());
+  return smb_request("list", share, path);
+}
+
+bool FileBrowserSDComponent::smb_request(const std::string &action, const std::string &share, 
+                                       const std::string &path, const std::string &data) {
+  if (!check_and_renew_auth()) {
+    return false;
+  }
+
+  std::string url = this->base_url_ + "/api/smb";
+  esp_http_client_handle_t client = create_client(url.c_str());
+  
+  std::string request_data = "{\"action\":\"" + action + 
+                            "\",\"share\":\"" + share + 
+                            "\",\"path\":\"" + path + "\"";
+  
+  if (!data.empty()) {
+    request_data += ",\"data\":\"" + data + "\"";
+  }
+  request_data += "}";
+  
+  esp_http_client_set_method(client, HTTP_METHOD_POST);
+  esp_http_client_set_header(client, "Content-Type", "application/json");
+  esp_http_client_set_post_field(client, request_data.c_str(), request_data.length());
+  
+  esp_err_t err = esp_http_client_perform(client);
+  bool success = false;
+  
+  if (err == ESP_OK) {
+    int status_code = esp_http_client_get_status_code(client);
+    if (status_code == 200) {
+      char buffer[1024] = {0};
+      int read_len = esp_http_client_read(client, buffer, sizeof(buffer)-1);
+      if (read_len > 0) {
+        buffer[read_len] = 0;
+        ESP_LOGI(TAG, "SMB response: %s", buffer);
+        success = true;
+      }
+    } else {
+      ESP_LOGE(TAG, "SMB request failed with status code: %d", status_code);
+    }
+  } else {
+    ESP_LOGE(TAG, "SMB request failed: %s", esp_err_to_name(err));
+  }
+  
+  esp_http_client_cleanup(client);
+  return success;
+}
+
 bool FileBrowserSDComponent::is_authenticated() {
   return !this->auth_token_.empty();
 }
@@ -261,6 +331,12 @@ void FileBrowserSDComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "  Base URL: %s", this->base_url_.c_str());
   ESP_LOGCONFIG(TAG, "  Mount Point: %s", this->mount_point_.c_str());
   ESP_LOGCONFIG(TAG, "  Username: %s", this->username_.c_str());
+  if (!this->smb_shares_.empty()) {
+    ESP_LOGCONFIG(TAG, "  SMB Shares:");
+    for (const auto &share : this->smb_shares_) {
+      ESP_LOGCONFIG(TAG, "    - %s", share.c_str());
+    }
+  }
 }
 
 }  // namespace filebrowser_sd
