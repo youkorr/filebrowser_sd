@@ -20,6 +20,7 @@ class FileBrowserSDComponent : public Component {
   void set_mount_point(const std::string &mount_point) { this->mount_point_ = mount_point; }
   
   bool login();
+  bool renew_token();
   bool list_files(const std::string &path = "/");
   bool upload_file(const std::string &local_path, const std::string &remote_path);
   bool download_file(const std::string &remote_path, const std::string &local_path);
@@ -34,8 +35,10 @@ class FileBrowserSDComponent : public Component {
   esp_http_client_handle_t create_client(const char* url);
   bool is_authenticated();
   void set_auth_header(esp_http_client_handle_t client);
+  bool check_and_renew_auth();
 };
 
 }  // namespace filebrowser_sd
 }  // namespace esphome
+
 
