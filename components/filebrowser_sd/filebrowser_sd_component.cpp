@@ -1,8 +1,8 @@
 #include "filebrowser_sd_component.h"
 #include "esphome/core/log.h"
+#include "esphome/core/helpers.h"
 #include <dirent.h>
 #include <sys/stat.h>
-#include "esp_base64.h"
 
 namespace esphome {
 namespace filebrowser_sd {
@@ -23,13 +23,11 @@ esp_http_client_handle_t FileBrowserSDComponent::create_client(const char* url) 
   
   if (!this->username_.empty() && !this->password_.empty()) {
     std::string auth_string = this->username_ + ":" + this->password_;
-    size_t out_len;
-    unsigned char *base64_auth = esp_base64_encode((const unsigned char*)auth_string.c_str(), 
-                                                  auth_string.length(), &out_len);
-    std::string auth_header = "Basic ";
-    auth_header += (char*)base64_auth;
-    free(base64_auth);
-    
+    std::string base64_auth = esphome::base64_encode(
+      (const unsigned char*)auth_string.c_str(), 
+      auth_string.length()
+    );
+    std::string auth_header = "Basic " + base64_auth;
     esp_http_client_set_header(client, "Authorization", auth_header.c_str());
   }
   
