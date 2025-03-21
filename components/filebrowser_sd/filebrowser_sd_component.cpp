@@ -1,6 +1,6 @@
 #include "filebrowser_sd_component.h"
 #include "esphome/core/log.h"
-#include <cJSON.h>
+
 
 namespace esphome {
 namespace filebrowser_sd {
