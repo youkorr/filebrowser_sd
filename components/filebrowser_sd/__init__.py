@@ -2,8 +2,8 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.const import CONF_ID, CONF_URL, CONF_USERNAME, CONF_PASSWORD
 
-DEPENDENCIES = ['sd_mmc_card', 'http_client']
-AUTO_LOAD = ['sd_mmc_card', 'http_client']
+DEPENDENCIES = ['sd_mmc_card']
+AUTO_LOAD = ['sd_mmc_card']
 
 CONF_MOUNT_POINT = 'mount_point'
 
