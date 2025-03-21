@@ -1,8 +1,9 @@
 #pragma once
-#include "../sd_mmc_card/sd_mmc_card.h"
+
 #include "esphome/core/component.h"
 #include "esphome/core/helpers.h"
-#include "esp_vfs.h"
+#include "../sd_mmc_card/sd_mmc_card.h"
+#include "esphome/components/http_client/http_client.h"
 
 namespace esphome {
 namespace filebrowser_sd {
@@ -13,23 +14,27 @@ class FileBrowserSDComponent : public Component {
   void dump_config() override;
   float get_setup_priority() const override { return setup_priority::LATE; }
   
-  void set_base_path(const std::string &base_path) { this->base_path_ = base_path; }
+  void set_webdav_url(const std::string &url) { this->webdav_url_ = url; }
+  void set_username(const std::string &username) { this->username_ = username; }
+  void set_password(const std::string &password) { this->password_ = password; }
   void set_mount_point(const std::string &mount_point) { this->mount_point_ = mount_point; }
-  void set_max_files(int max_files) { this->max_files_ = max_files; }
-  void set_format_if_mount_failed(bool format_if_mount_failed) { this->format_if_mount_failed_ = format_if_mount_failed; }
   
-  bool list_dir(const std::string &path);
-  bool create_dir(const std::string &path);
-  bool delete_file(const std::string &path);
-  bool rename_file(const std::string &old_path, const std::string &new_path);
-  bool get_file_info(const std::string &path);
+  // WebDAV operations
+  void sync_to_filebrowser();
+  void sync_from_filebrowser();
   
  protected:
-  std::string base_path_;
+  std::string webdav_url_;
+  std::string username_;
+  std::string password_;
   std::string mount_point_;
-  int max_files_{5};
-  bool format_if_mount_failed_{false};
+  http_client::HTTPClient *client_{nullptr};
+
+  void upload_file(const std::string &local_path, const std::string &remote_path);
+  void download_file(const std::string &remote_path, const std::string &local_path);
+  void list_remote_files();
 };
 
 }  // namespace filebrowser_sd
 }  // namespace esphome
+
