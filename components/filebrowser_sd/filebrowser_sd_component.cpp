@@ -40,8 +40,8 @@ bool FileBrowserSDComponent::login() {
     int status_code = esp_http_client_get_status_code(client);
     if (status_code == 200) {
       // Get auth token from response header
-      char *token = esp_http_client_get_header(client, "X-Auth-Token");
-      if (token != nullptr) {
+      char *token = nullptr;
+      if (esp_http_client_get_header(client, "X-Auth-Token", &token) == ESP_OK && token != nullptr) {
         this->auth_token_ = std::string(token);
         success = true;
       }
