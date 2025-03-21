@@ -1,5 +1,5 @@
 #pragma once
-
+#include "../sd_mmc_card/sd_mmc_card.h"
 #include "esphome/core/component.h"
 #include "esphome/core/helpers.h"
 #include "esp_vfs.h"
