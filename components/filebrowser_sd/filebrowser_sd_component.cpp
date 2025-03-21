@@ -1,122 +1,129 @@
-#include "filebrowser_sd_component.h"
+#include "filebrowser_sd.h"
 #include "esphome/core/log.h"
 #include <dirent.h>
 #include <sys/stat.h>
-#include <string.h>
 
 namespace esphome {
 namespace filebrowser_sd {
 
-static const char *TAG = "filebrowser_sd";
+static const char *const TAG = "filebrowser_sd";
 
 void FileBrowserSDComponent::setup() {
-  // La carte SD est déjà montée par le composant sd_mmc_card, donc on ne fait pas de montage ici
-  ESP_LOGCONFIG(TAG, "FileBrowser SD Component initialized");
-  ESP_LOGCONFIG(TAG, "  Base Path: %s", this->base_path_.c_str());
-  ESP_LOGCONFIG(TAG, "  Mount Point: %s", this->mount_point_.c_str());
-  ESP_LOGCONFIG(TAG, "  Max Files: %d", this->max_files_);
-}
-
-void FileBrowserSDComponent::dump_config() {
-  ESP_LOGCONFIG(TAG, "FileBrowser SD Component:");
-  ESP_LOGCONFIG(TAG, "  Base Path: %s", this->base_path_.c_str());
-  ESP_LOGCONFIG(TAG, "  Mount Point: %s", this->mount_point_.c_str());
-  ESP_LOGCONFIG(TAG, "  Max Files: %d", this->max_files_);
-  ESP_LOGCONFIG(TAG, "  Format If Mount Failed: %s", YESNO(this->format_if_mount_failed_));
-}
-
-bool FileBrowserSDComponent::list_dir(const std::string &path) {
-  DIR *dir = nullptr;
-  struct dirent *entry = nullptr;
-  struct stat stat_buf;
-  std::string full_path = this->mount_point_ + path;
+  ESP_LOGCONFIG(TAG, "Setting up FileBrowser SD WebDAV Client...");
   
-  ESP_LOGI(TAG, "Listing directory: %s", full_path.c_str());
+  this->client_ = new http_client::HTTPClient();
+  this->client_->set_timeout(20000); // 20 seconds timeout
   
-  dir = opendir(full_path.c_str());
-  if (!dir) {
-    ESP_LOGE(TAG, "Failed to open directory: %s", full_path.c_str());
-    return false;
+  // Configuration de base auth pour WebDAV
+  if (!this->username_.empty() && !this->password_.empty()) {
+    String auth = this->username_.c_str();
+    auth += ":";
+    auth += this->password_.c_str();
+    this->client_->set_auth_header("Basic " + base64::encode(auth));
   }
   
+  ESP_LOGCONFIG(TAG, "WebDAV client initialized");
+}
+
+void FileBrowserSDComponent::sync_to_filebrowser() {
+  ESP_LOGI(TAG, "Starting sync to Filebrowser...");
+  
+  DIR *dir = opendir(this->mount_point_.c_str());
+  if (!dir) {
+    ESP_LOGE(TAG, "Failed to open local directory");
+    return;
+  }
+  
+  struct dirent *entry;
   while ((entry = readdir(dir)) != nullptr) {
-    std::string entry_path = full_path + "/" + entry->d_name;
-    
-    if (stat(entry_path.c_str(), &stat_buf) == 0) {
-      if (S_ISDIR(stat_buf.st_mode)) {
-        ESP_LOGI(TAG, "[DIR] %s", entry->d_name);
-      } else {
-        ESP_LOGI(TAG, "[FILE] %s (%ld bytes)", entry->d_name, stat_buf.st_size);
-      }
-    } else {
-      ESP_LOGE(TAG, "Failed to get stats for %s", entry_path.c_str());
+    if (entry->d_type == DT_REG) { // Regular file
+      std::string local_path = this->mount_point_ + "/" + entry->d_name;
+      std::string remote_path = this->webdav_url_ + "/" + entry->d_name;
+      upload_file(local_path, remote_path);
     }
   }
   
   closedir(dir);
-  return true;
+  ESP_LOGI(TAG, "Sync to Filebrowser completed");
 }
 
-bool FileBrowserSDComponent::create_dir(const std::string &path) {
-  std::string full_path = this->mount_point_ + path;
-  
-  ESP_LOGI(TAG, "Creating directory: %s", full_path.c_str());
-  
-  if (mkdir(full_path.c_str(), 0755) != 0) {
-    ESP_LOGE(TAG, "Failed to create directory: %s", full_path.c_str());
-    return false;
-  }
-  
-  return true;
+void FileBrowserSDComponent::sync_from_filebrowser() {
+  ESP_LOGI(TAG, "Starting sync from Filebrowser...");
+  list_remote_files();
 }
 
-bool FileBrowserSDComponent::delete_file(const std::string &path) {
-  std::string full_path = this->mount_point_ + path;
+void FileBrowserSDComponent::upload_file(const std::string &local_path, const std::string &remote_path) {
+  ESP_LOGI(TAG, "Uploading %s to %s", local_path.c_str(), remote_path.c_str());
   
-  ESP_LOGI(TAG, "Deleting file: %s", full_path.c_str());
-  
-  if (unlink(full_path.c_str()) != 0) {
-    ESP_LOGE(TAG, "Failed to delete file: %s", full_path.c_str());
-    return false;
+  FILE *file = fopen(local_path.c_str(), "r");
+  if (!file) {
+    ESP_LOGE(TAG, "Failed to open local file for upload");
+    return;
   }
   
-  return true;
+  // Lecture du fichier
+  fseek(file, 0, SEEK_END);
+  size_t size = ftell(file);
+  fseek(file, 0, SEEK_SET);
+  
+  uint8_t *buffer = new uint8_t[size];
+  fread(buffer, 1, size, file);
+  fclose(file);
+  
+  // Envoi via WebDAV PUT
+  this->client_->set_method(http_client::HTTP_METHOD_PUT);
+  this->client_->set_url(remote_path);
+  this->client_->set_body(buffer, size);
+  this->client_->send();
+  
+  delete[] buffer;
 }
 
-bool FileBrowserSDComponent::rename_file(const std::string &old_path, const std::string &new_path) {
-  std::string full_old_path = this->mount_point_ + old_path;
-  std::string full_new_path = this->mount_point_ + new_path;
+void FileBrowserSDComponent::download_file(const std::string &remote_path, const std::string &local_path) {
+  ESP_LOGI(TAG, "Downloading %s to %s", remote_path.c_str(), local_path.c_str());
   
-  ESP_LOGI(TAG, "Renaming file: %s -> %s", full_old_path.c_str(), full_new_path.c_str());
+  this->client_->set_method(http_client::HTTP_METHOD_GET);
+  this->client_->set_url(remote_path);
   
-  if (rename(full_old_path.c_str(), full_new_path.c_str()) != 0) {
-    ESP_LOGE(TAG, "Failed to rename file: %s -> %s", full_old_path.c_str(), full_new_path.c_str());
-    return false;
-  }
+  this->client_->on_response([this, local_path](http_client::HTTPClient &client, 
+                                              http_client::HTTPClientResponse response) {
+    if (response.code == 200) {
+      FILE *file = fopen(local_path.c_str(), "w");
+      if (file) {
+        fwrite(response.body.data(), 1, response.body.size(), file);
+        fclose(file);
+        ESP_LOGI(TAG, "File downloaded successfully");
+      }
+    }
+  });
   
-  return true;
+  this->client_->send();
 }
 
-bool FileBrowserSDComponent::get_file_info(const std::string &path) {
-  std::string full_path = this->mount_point_ + path;
-  struct stat stat_buf;
+void FileBrowserSDComponent::list_remote_files() {
+  ESP_LOGI(TAG, "Listing remote files...");
   
-  ESP_LOGI(TAG, "Getting file info: %s", full_path.c_str());
+  this->client_->set_method(http_client::HTTP_METHOD_PROPFIND);
+  this->client_->set_url(this->webdav_url_);
+  this->client_->set_header("Depth", "1");
   
-  if (stat(full_path.c_str(), &stat_buf) != 0) {
-    ESP_LOGE(TAG, "Failed to get file info: %s", full_path.c_str());
-    return false;
-  }
+  this->client_->on_response([this](http_client::HTTPClient &client, 
+                                  http_client::HTTPClientResponse response) {
+    if (response.code == 207) { // Multi-Status
+      // Parse WebDAV XML response
+      ESP_LOGI(TAG, "Received WebDAV directory listing");
+      // TODO: Implement XML parsing for WebDAV response
+    }
+  });
   
-  if (S_ISDIR(stat_buf.st_mode)) {
-    ESP_LOGI(TAG, "Type: Directory");
-  } else {
-    ESP_LOGI(TAG, "Type: File");
-    ESP_LOGI(TAG, "Size: %ld bytes", stat_buf.st_size);
-    ESP_LOGI(TAG, "Modified time: %ld", stat_buf.st_mtime);
-  }
-  
-  return true;
+  this->client_->send();
+}
+
+void FileBrowserSDComponent::dump_config() {
+  ESP_LOGCONFIG(TAG, "FileBrowser SD WebDAV Client:");
+  ESP_LOGCONFIG(TAG, "  WebDAV URL: %s", this->webdav_url_.c_str());
+  ESP_LOGCONFIG(TAG, "  Mount Point: %s", this->mount_point_.c_str());
+  ESP_LOGCONFIG(TAG, "  Username: %s", this->username_.c_str());
 }
 
 }  // namespace filebrowser_sd
