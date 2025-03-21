@@ -3,7 +3,7 @@
 #include "esphome/core/component.h"
 #include "esphome/core/helpers.h"
 #include "../sd_mmc_card/sd_mmc_card.h"
-#include "esphome/components/http_client/http_client.h"
+#include "esp_http_client.h"
 
 namespace esphome {
 namespace filebrowser_sd {
@@ -19,7 +19,6 @@ class FileBrowserSDComponent : public Component {
   void set_password(const std::string &password) { this->password_ = password; }
   void set_mount_point(const std::string &mount_point) { this->mount_point_ = mount_point; }
   
-  // WebDAV operations
   void sync_to_filebrowser();
   void sync_from_filebrowser();
   
@@ -28,11 +27,12 @@ class FileBrowserSDComponent : public Component {
   std::string username_;
   std::string password_;
   std::string mount_point_;
-  http_client::HTTPClient *client_{nullptr};
+  esp_http_client_handle_t client_{nullptr};
 
   void upload_file(const std::string &local_path, const std::string &remote_path);
   void download_file(const std::string &remote_path, const std::string &local_path);
   void list_remote_files();
+  esp_http_client_handle_t create_client(const char* url);
 };
 
 }  // namespace filebrowser_sd
