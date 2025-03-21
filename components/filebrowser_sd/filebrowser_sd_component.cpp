@@ -3,7 +3,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <string.h>
-#include <WiFi.h>
+#include "esp_wifi.h"  // Pour gérer le Wi-Fi en mode ESP-IDF
 
 namespace esphome {
 namespace filebrowser_sd {
@@ -25,7 +25,7 @@ void FileBrowserSDComponent::setup() {
 
   // Démarrer le serveur web si l'adresse IP et le port sont configurés
   if (!this->address_ip_.empty() && this->port_ != 0) {
-    this->start_web_server();
+    this->start_wifi_and_web_server();
   }
 }
 
@@ -50,17 +50,39 @@ bool FileBrowserSDComponent::authenticate(const std::string &username, const std
   return (username == this->username_ && password == this->password_);
 }
 
-void FileBrowserSDComponent::start_web_server() {
+void FileBrowserSDComponent::start_wifi_and_web_server() {
   if (this->address_ip_.empty() || this->port_ == 0) {
     ESP_LOGE(TAG, "Address IP or port not configured");
     return;
   }
 
-  // Connexion au WiFi
-  WiFi.begin("your-ssid", "your-password"); // Remplacez par vos identifiants WiFi
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
-    ESP_LOGI(TAG, "Connecting to WiFi...");
+  // Initialisation du Wi-Fi en mode ESP-IDF
+  esp_netif_init();
+  esp_event_loop_create_default();
+  esp_netif_create_default_wifi_sta();
+
+  wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+  esp_wifi_init(&cfg);
+
+  wifi_config_t wifi_config = {};
+  strncpy((char *)wifi_config.sta.ssid, "your-ssid", sizeof(wifi_config.sta.ssid));  // Remplacez par votre SSID
+  strncpy((char *)wifi_config.sta.password, "your-password", sizeof(wifi_config.sta.password));  // Remplacez par votre mot de passe
+
+  esp_wifi_set_mode(WIFI_MODE_STA);
+  esp_wifi_set_config(WIFI_IF_STA, &wifi_config);
+  esp_wifi_start();
+
+  ESP_LOGI(TAG, "Connecting to Wi-Fi...");
+  esp_wifi_connect();
+
+  // Attendre que la connexion Wi-Fi soit établie
+  while (true) {
+    wifi_ap_record_t ap_info;
+    if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
+      ESP_LOGI(TAG, "Connected to Wi-Fi");
+      break;
+    }
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
   }
 
   ESP_LOGI(TAG, "Web server started at http://%s:%d", this->address_ip_.c_str(), this->port_);
