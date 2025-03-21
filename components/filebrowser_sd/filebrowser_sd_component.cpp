@@ -1,8 +1,5 @@
 #include "filebrowser_sd_component.h"
 #include "esphome/core/log.h"
-#include "esphome/core/helpers.h"
-#include <dirent.h>
-#include <sys/stat.h>
 #include <cJSON.h>
 
 namespace esphome {
@@ -11,8 +8,8 @@ namespace filebrowser_sd {
 static const char *const TAG = "filebrowser_sd";
 
 void FileBrowserSDComponent::setup() {
-  ESP_LOGCONFIG(TAG, "Initializing FileBrowser Client for ESP32-S3-Box-3...");
-
+  ESP_LOGCONFIG(TAG, "Initializing FileBrowser Client...");
+  
   if (login()) {
     ESP_LOGI(TAG, "Successfully logged in to Filebrowser");
     
@@ -21,113 +18,8 @@ void FileBrowserSDComponent::setup() {
         ESP_LOGE(TAG, "Failed to mount SMB shares");
       }
     }
-    
-    list_files();
   } else {
     ESP_LOGE(TAG, "Failed to login to Filebrowser");
-  }
-}
-
-bool FileBrowserSDComponent::login() {
-  ESP_LOGI(TAG, "Logging in to Filebrowser...");
-  
-  std::string login_url = this->base_url_ + "/api/login";
-  esp_http_client_handle_t client = create_client(login_url.c_str());
-  
-  std::string login_data = "{\"username\":\"" + this->username_ + 
-                          "\",\"password\":\"" + this->password_ + "\"}";
-  
-  esp_http_client_set_method(client, HTTP_METHOD_POST);
-  esp_http_client_set_header(client, "Content-Type", "application/json");
-  esp_http_client_set_post_field(client, login_data.c_str(), login_data.length());
-  
-  esp_err_t err = esp_http_client_perform(client);
-  bool success = false;
-  
-  if (err == ESP_OK) {
-    int status_code = esp_http_client_get_status_code(client);
-    if (status_code == 200) {
-      char *token = nullptr;
-      if (esp_http_client_get_header(client, "X-Auth-Token", &token) == ESP_OK && token != nullptr) {
-        this->auth_token_ = std::string(token);
-        success = true;
-        ESP_LOGI(TAG, "Successfully obtained auth token");
-      } else {
-        ESP_LOGE(TAG, "Failed to get auth token from response");
-      }
-    } else {
-      ESP_LOGE(TAG, "Login failed with status code: %d", status_code);
-      if (status_code == 401) {
-        ESP_LOGE(TAG, "Invalid username or password");
-      }
-    }
-  } else {
-    ESP_LOGE(TAG, "Login request failed: %s", esp_err_to_name(err));
-  }
-  
-  esp_http_client_cleanup(client);
-  return success;
-}
-
-bool FileBrowserSDComponent::renew_token() {
-  if (this->auth_token_.empty()) {
-    return login();
-  }
-
-  ESP_LOGI(TAG, "Renewing authentication token...");
-  std::string renew_url = this->base_url_ + "/api/renew";
-  esp_http_client_handle_t client = create_client(renew_url.c_str());
-  
-  esp_http_client_set_method(client, HTTP_METHOD_POST);
-  
-  esp_err_t err = esp_http_client_perform(client);
-  bool success = false;
-  
-  if (err == ESP_OK) {
-    int status_code = esp_http_client_get_status_code(client);
-    if (status_code == 200) {
-      success = true;
-      ESP_LOGI(TAG, "Token renewed successfully");
-    } else {
-      ESP_LOGE(TAG, "Token renewal failed with status code: %d", status_code);
-      if (status_code == 401) {
-        this->auth_token_.clear();
-        success = login();
-      }
-    }
-  } else {
-    ESP_LOGE(TAG, "Token renewal request failed: %s", esp_err_to_name(err));
-  }
-  
-  esp_http_client_cleanup(client);
-  return success;
-}
-
-bool FileBrowserSDComponent::check_and_renew_auth() {
-  if (this->auth_token_.empty()) {
-    return login();
-  }
-  return true;
-}
-
-esp_http_client_handle_t FileBrowserSDComponent::create_client(const char* url) {
-  esp_http_client_config_t config = {};
-  config.url = url;
-  config.timeout_ms = 20000;
-  config.disable_auto_redirect = false;
-  
-  esp_http_client_handle_t client = esp_http_client_init(&config);
-  
-  if (!this->auth_token_.empty()) {
-    set_auth_header(client);
-  }
-  
-  return client;
-}
-
-void FileBrowserSDComponent::set_auth_header(esp_http_client_handle_t client) {
-  if (!this->auth_token_.empty()) {
-    esp_http_client_set_header(client, "X-Auth-Token", this->auth_token_.c_str());
   }
 }
 
@@ -323,23 +215,5 @@ bool FileBrowserSDComponent::smb_request(const std::string &action, const std::s
   return success;
 }
 
-bool FileBrowserSDComponent::is_authenticated() {
-  return !this->auth_token_.empty();
-}
-
-void FileBrowserSDComponent::dump_config() {
-  ESP_LOGCONFIG(TAG, "FileBrowser Client:");
-  ESP_LOGCONFIG(TAG, "  Base URL: %s", this->base_url_.c_str());
-  ESP_LOGCONFIG(TAG, "  Mount Point: %s", this->mount_point_.c_str());
-  ESP_LOGCONFIG(TAG, "  Username: %s", this->username_.c_str());
-  if (!this->smb_shares_.empty()) {
-    ESP_LOGCONFIG(TAG, "  SMB Shares:");
-    for (const auto &share : this->smb_shares_) {
-      ESP_LOGCONFIG(TAG, "    - %s", share.c_str());
-    }
-  }
-}
-
 }  // namespace filebrowser_sd
 }  // namespace esphome
-
