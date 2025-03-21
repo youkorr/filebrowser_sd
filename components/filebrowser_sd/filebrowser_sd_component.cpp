@@ -3,6 +3,7 @@
 #include "esphome/core/helpers.h"
 #include <dirent.h>
 #include <sys/stat.h>
+#include <cJSON.h>
 
 namespace esphome {
 namespace filebrowser_sd {
@@ -10,8 +11,8 @@ namespace filebrowser_sd {
 static const char *const TAG = "filebrowser_sd";
 
 void FileBrowserSDComponent::setup() {
-  ESP_LOGCONFIG(TAG, "Setting up FileBrowser SD Client...");
-  
+  ESP_LOGCONFIG(TAG, "Initializing FileBrowser Client for ESP32-S3-Box-3...");
+
   if (login()) {
     ESP_LOGI(TAG, "Successfully logged in to Filebrowser");
     
@@ -327,7 +328,7 @@ bool FileBrowserSDComponent::is_authenticated() {
 }
 
 void FileBrowserSDComponent::dump_config() {
-  ESP_LOGCONFIG(TAG, "FileBrowser SD Client:");
+  ESP_LOGCONFIG(TAG, "FileBrowser Client:");
   ESP_LOGCONFIG(TAG, "  Base URL: %s", this->base_url_.c_str());
   ESP_LOGCONFIG(TAG, "  Mount Point: %s", this->mount_point_.c_str());
   ESP_LOGCONFIG(TAG, "  Username: %s", this->username_.c_str());
